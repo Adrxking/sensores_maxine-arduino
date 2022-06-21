@@ -5,18 +5,21 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
+#include <DHT.h>
 
 String dId = "121212";
-String webhook_pass = "xRiqUjnAju";
+String webhook_pass = "Rxa1UhE9oy";
 String webhook_endpoint = "http://178.18.241.48:3001/api/getdevicecredentials";
 const char *mqtt_server = "178.18.241.48";
 
 // PINS
 #define led 2
+#define DHTPIN 2
+#define DHTTYPE DHT22
 
 // WiFi
-const char *wifi_ssid = "DIGIFIBRA-bxAT";
-const char *wifi_password = "TT5YSRHt95";
+const char *wifi_ssid = "Rx2";
+const char *wifi_password = "@drian0303";
 
 // DEFINICIONES DE FUNCIONES
 bool get_mqtt_credentials();
@@ -34,17 +37,24 @@ void clear();
 WiFiClient espclient;
 PubSubClient client(espclient);
 IoTicosSplitter splitter;
+DHT dht(DHTPIN, DHTTYPE); // Inicializar sensor DHT para Arduino 16mhz
 long lastReconnectAttemp = 0;
 long varsLastSend[20];
 String last_received_msg = "";
 String last_received_topic = "";
 int prev_temp = 0;
 int prev_hum = 0;
+int chk;
+int dif;
+float hum;
+float temp;
 
 DynamicJsonDocument mqtt_data_doc(2048);
 
 void setup() {
   Serial.begin(921600);
+  dht.begin();
+
   pinMode(led, OUTPUT);
   clear();
 
@@ -89,25 +99,25 @@ void loop() {
 // FUNCIONES DE USUARIO ⤵
 void process_sensors() {
   // SIMULACIÓN DE TEMPERATURA
-  int temp = random(1, 50);
+  temp= dht.readTemperature();
   mqtt_data_doc["variables"][0]["last"]["value"] = temp;
 
   // COMPROBAR SI SE DEBE GUARDAR LA TEMPERATURA
-  int dif = temp - prev_temp;
+  dif = temp - prev_temp;
   
   if (dif < 0) {
     dif *= -1;
   }
-  if (dif >= 20) {
+  if (dif >= 0.3) {
     mqtt_data_doc["variables"][0]["last"]["save"] = 1;
+    prev_temp = temp;
   } else {
     mqtt_data_doc["variables"][0]["last"]["save"] = 0;
   }
 
-  prev_temp = temp;
 
   // SIMULACIÓN DE HUMEDAD
-  int hum = random(1, 100);
+  hum = dht.readHumidity();
   mqtt_data_doc["variables"][1]["last"]["value"] = hum;
 
   // COMPROBAR SI SE DEBE GUARDAR LA HUMEDAD
@@ -116,16 +126,18 @@ void process_sensors() {
   if (dif < 0) {
     dif *= -1;
   }
-  if (dif >= 35) {
+  if (dif >= 3) {
     mqtt_data_doc["variables"][1]["last"]["save"] = 1;
+    prev_hum = hum;
   } else {
     mqtt_data_doc["variables"][1]["last"]["save"] = 0;
   }
 
-  prev_hum = hum;
 
   // OBTENER EL ESTADO DEL LED
   mqtt_data_doc["variables"][4]["last"]["value"] = (HIGH == digitalRead(led));
+
+  delay(2000);
 }
 
 void process_actuators() {
@@ -185,7 +197,7 @@ void send_data_to_broker() {
 
     int freq = mqtt_data_doc["variables"][i]["variableSendFreq"];
 
-    if (now - varsLastSend[i] > freq * 1000) {
+    if (mqtt_data_doc["variables"][i]["last"]["save"] == 1) {
       varsLastSend[i] = millis();
 
       String str_root_topic = mqtt_data_doc["topic"];
@@ -215,7 +227,7 @@ bool reconnect() {
     ESP.restart();
   }
 
-  //Setting up Mqtt Server
+  // MQTT Server
   client.setServer(mqtt_server, 1883);
 
   Serial.print(underlinePurple + "\n\n\nIntentando conexión MQTT" + fontReset + Purple + "  ⤵");
@@ -299,10 +311,10 @@ bool get_mqtt_credentials() {
 }
 
 void clear() {
-  Serial.write(27);    // Comando ESC
+  Serial.write(27);
   Serial.print("[2J"); // Comando para limpiar pantalla
   Serial.write(27);
-  Serial.print("[H"); // Cursor al commando home
+  Serial.print("[H");
 }
 
 long lastStats = 0;
